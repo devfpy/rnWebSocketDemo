@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { DeviceEventEmitter } from 'react-native';
 import * as Ws from './websocket';
+import _ from 'lodash';
 
 
 var RNFS = require('react-native-fs')
@@ -126,6 +127,7 @@ class CustomVew extends Component {
     constructor(props) {
         super(props);
         this.state = {
+
         };
     }
     render() {
@@ -143,11 +145,13 @@ export default class App extends Component {
             initHeight = 100
         }
         this.state = {
+            messages: [],
             inputLayoutHeight: initHeight,
             messageListLayout: { flex: 1, width: window.width, margin: 0 },
             inputViewLayout: { width: window.width, height: initHeight, },
             isAllowPullToRefresh: true,
             navigationBar: {},
+
         }
 
 
@@ -180,11 +184,46 @@ export default class App extends Component {
             message.msgType = 'text'
             message.text = msgContent;
 
-            AuroraIController.appendMessages([message])
+            let newMessages = this.state.messages;
+            newMessages.push(message);
+            this.setState({
+                messages: newMessages
+            });
 
+            AuroraIController.appendMessages([message])
         });
 
-        Ws.loginChatServer("devfpy", "111111");
+        this.newMessageSubscription = DeviceEventEmitter.addListener('receiptMsg', (obj) => {
+            console.log(".......... 接收到消息回执", obj);
+            let msgId = obj.msgId;
+
+            let messageItem = null;
+            messageItem = _.find(_.cloneDeep(this.state.messages), (o)=>{
+                return o.msgId == msgId;
+            });
+
+            messageItem.status = "send_succeed";
+            console.log(messageItem);
+
+
+            AuroraIController.updateMessage(messageItem);
+
+            // let newMessages = _.cloneDeep(this.state.messages) ;
+            // for (let i = 0; i < newMessages.length; i++) {
+            //     let item = newMessages[i];
+            //     if (msgId == item.msgId) {
+
+            //         messageItem = item;
+            //         console.log("....... item finded");
+            //         messageItem["status"] = "send_succeed";
+            //     }
+            // }
+
+            
+
+        })
+
+        // Ws.loginChatServer();
     }
 
     messageListDidLoadEvent() {
@@ -349,8 +388,14 @@ export default class App extends Component {
         message.msgType = 'text'
         message.text = text
         message.toUser = {
-            userId:'100002',
+            userId: Platform.OS == 'ios' ? '100002' : '100001',
         }
+
+        let newMessages = this.state.messages;
+        newMessages.push(message);
+        this.setState({
+            messages: newMessages
+        });
 
         AuroraIController.appendMessages([message]);
 
@@ -366,7 +411,7 @@ export default class App extends Component {
         this.resetMenu()
         AuroraIController.scrollToBottom(true);
 
-        
+
     }
 
     onStartRecordVoice = (e) => {
@@ -412,7 +457,7 @@ export default class App extends Component {
          * 
          * 代码用例不做裁剪操作。
          */
-        Alert.alert('fas', JSON.stringify(mediaFiles))
+        // Alert.alert('fas', JSON.stringify(mediaFiles))
         for (index in mediaFiles) {
             var message = constructNormalMessage()
             if (mediaFiles[index].mediaType == "image") {
@@ -426,8 +471,14 @@ export default class App extends Component {
             message.timeString = "8:00"
             message.status = "send_going"
             message.toUser = {
-                userId:'100002',
+                userId: Platform.OS == 'ios' ? '100002' : '100001',
             }
+
+            let newMessages = this.state.messages;
+            newMessages.push(message);
+            this.setState({
+                messages: newMessages
+            });
 
             AuroraIController.appendMessages([message])
             AuroraIController.scrollToBottom(true)

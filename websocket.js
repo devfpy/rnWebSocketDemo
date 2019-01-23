@@ -1,18 +1,56 @@
+import { Platform } from 'react-native';
 import { DeviceEventEmitter } from 'react-native';
 import './UserAgent';
 import io from 'socket.io-client';
 import RNFetchBlob from 'rn-fetch-blob';
 
 
-const socket = io('ws://127.0.0.1:8000', { transport: ['websocket'] });
-const mySelfData = {
-    userid: 100001,
+// const socket = io('ws://127.0.0.1:8000', { transport: ['websocket', 'polling'],jsonp: false, rejectUnauthorized:false, });
+// const socket = io('ws://127.0.0.1:8000',
+//     {
+//         reconnection: true,
+//         reconnectionDelay: 500,
+//         reconnectionAttempts: Infinity,
+//         transports: ['websocket'],
+//     }
+// );
+
+const serverDomain = Platform.OS=='ios'?"ws://127.0.0.1:8000":"ws://192.168.1.114:8000";
+
+const socket = io.connect(serverDomain, {
+    transports: ['websocket'],
+    reconnectionDelay: 1000,
+    reconnection: true,
+    reconnectionAttempts: 10,
+    // transports: ['websocket'],
+    agent: false, // [2] Please don't set this to true
+    upgrade: false,
+    rejectUnauthorized: false
+});
+
+const mySelfData = Platform.OS == 'ios' ? {
+    userid: "100001",
     username: 'devfpy'
-}
+} : {
+        userid: "100002",
+        username: 'fanpingyang'
+    }
+
+// io(socket).on("connect_error", (error) => {
+//     console.log("connect_error  ", error);
+// })
+
+socket.on('error', (error) => {
+    console.log('error: ' + error)
+})
 
 //监听连接
 socket.on('connect', () => {
     console.log('Chat Server Did Connected!');
+
+    //用户登录
+    loginChatServer();
+
 });
 
 //监听新用户登录
@@ -30,12 +68,26 @@ socket.on('message', function (obj) {
 
     let msgByUserId = obj.userid;
     if (msgByUserId == mySelfData.userid) {
-        console.log("......... 我的消息已经发送", obj);
+        // console.log("......... 我的消息已经发送", obj);
     }
     else {
         console.log("......... 接收到新消息", obj);
 
-        DeviceEventEmitter.emit('receivedMsg', obj);
+        //发送回执
+        let toUserId = obj.toUserId;
+        obj.toUserId = msgByUserId;
+        obj.userid = toUserId;
+        console.log("...... 发送回执", obj);
+        socket.emit('messageReceived', obj);
+    }
+
+});
+
+//监听消息发送回执
+socket.on('messageReceived', function (obj) {
+    if (obj.toUserId == mySelfData.userid) {
+        console.log("......... 我的消息已经发送", obj);
+        DeviceEventEmitter.emit('receiptMsg', obj);
     }
 
 });
@@ -56,39 +108,43 @@ export function loginChatServer() {
 export function sendMessage(type, msgObj) {
     if (type == 'text') {
         console.log(msgObj);
-        this.sendMessageText(msgObj.text, msgObj.toUser.userId);
+        let msgId = msgObj.msgId;
+        this.sendMessageText(msgId, msgObj.text, msgObj.toUser.userId);
     }
     else if (type == 'file') {
         console.log(msgObj);
 
+        let msgId = msgObj.msgId;
         let mediaPath = msgObj.mediaPath;
         let msgType = msgObj.msgType;
         let msgToUserId = msgObj.toUser.userId;
         let mediaName = mediaPath.substr(mediaPath.lastIndexOf('/') + 1);
-        this.sendMessageFile(mediaName, mediaPath, msgToUserId);
+        this.sendMessageFile(msgId, mediaName, mediaPath, msgToUserId);
     }
 }
 
 /**
  * 发送文本消息
+ * @param {*} msgId 
  * @param {*} msgContent 
+ * @param {*} toUserId 
  */
-export function sendMessageText(msgContent, toUserId) {
+export function sendMessageText(msgId, msgContent, toUserId) {
     var obj = {
         userid: mySelfData.userid,
         username: mySelfData.username,
         content: msgContent,
-        toUserId: toUserId
+        toUserId: toUserId,
+        msgId: msgId
     };
 
-    // socket.send(obj);
     socket.emit('messageTo', obj);
 }
 
 /**
  * 发送文件消息
  */
-export function sendMessageFile(fileName, filePath, toUserId) {
+export function sendMessageFile(msgId, fileName, filePath, toUserId) {
 
     let data = '';
 
@@ -97,7 +153,8 @@ export function sendMessageFile(fileName, filePath, toUserId) {
         username: mySelfData.username,
         content: "",
         toUserId: toUserId,
-        name: fileName
+        name: fileName,
+        msgId: msgId
     };
 
     RNFetchBlob.fs.readStream(
@@ -114,7 +171,7 @@ export function sendMessageFile(fileName, filePath, toUserId) {
             ifstream.onData((chunk) => {
                 // when encoding is `ascii`, chunk will be an array contains numbers
                 // otherwise it will be a string
-                console.log("......... chunkCount = [" + chunkCount + "]");
+                // console.log("......... chunkCount = [" + chunkCount + "]");
                 chunkCount++;
                 data += chunk
             })
